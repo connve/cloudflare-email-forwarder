@@ -108,8 +108,8 @@ export default {
       console.log(`Found routing config for domain: ${JSON.stringify(routingConfig)}`);
 
       try {
-        // Get auth token from environment using secret name
-        const authToken = (env as any)[routingConfig.secret_name];
+        // Get auth token from Secrets store using secret name
+        const authToken = await (env as any)[routingConfig.secret_name].get();
         if (!authToken) {
           console.error(`Auth token not found for secret: ${routingConfig.secret_name}`);
           return;
