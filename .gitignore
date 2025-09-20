@@ -1,0 +1,7 @@
+**/target/
+**/node_modules/
+**/.wrangler/
+.idea/
+.cargo/
+.DS_Store
+.git
