@@ -1,75 +1,97 @@
-# Cloudflare Resources
+# Email Forwarder
 
-This repository contains all Cloudflare infrastructure resources and configurations for our organization. It serves as a centralized hub for managing Cloudflare Workers, KV stores, and other Cloudflare services.
+Simple Cloudflare Workers email forwarder that parses incoming emails and sends them to a webhook endpoint. Designed to be copied for each client deployment.
 
-## 🏗️ Repository Structure
+## Repository Structure
 
 ```
-cloudflare/
-├── workers/                    # Cloudflare Workers
-│   └── email-forwarder/       # Email forwarding worker with multi-client support
-└── .github/                   # CI/CD workflows
-    └── workflows/
-        └── deploy.yaml        # Automated deployment pipeline
+├── src/
+│   └── index.ts              # Email worker
+├── package.json
+├── package-lock.json
+├── tsconfig.json            # TypeScript configuration
+├── worker-configuration.d.ts # Worker types
+├── wrangler.toml.example    # Wrangler config template
+├── .gitignore
+└── README.md
 ```
 
-## 🚀 Workers
+## Features
 
-### Email Forwarder
-A sophisticated email forwarding worker that supports multiple clients through domain-based routing.
+- Parses email content (text, HTML, headers)
+- Forwards to webhook with Bearer token auth
+- Domain filtering (block domains, filter internal emails)
+- JSON output with kebab-case fields
 
-**Features:**
-- 📧 Multi-client email forwarding based on domain matching
-- 🔐 Secure authentication using Cloudflare Workers Secrets
-- 📊 Structured email parsing (text, HTML, headers)
-- ⚡ Dynamic configuration via KV store
-- 🔄 Automatic webhook forwarding
+## Configuration
 
-**Location:** `workers/email-forwarder/`
+### Environment Variables
+Set via `wrangler secret put` or Cloudflare Dashboard:
 
-## 🔧 Configuration
+- `HTTP_WEBHOOK_URL` - Webhook endpoint
+- `HTTP_WEBHOOK_API_TOKEN` - Bearer token
 
-### KV Stores
-- **EMAIL_ROUTING**: Domain-based routing configuration
-
-### Secrets
-- Domain-specific authentication tokens (e.g., `ORTOFAN_API_TOKEN`)
-
-## 🚀 Deployment
-
-Deployments are automated through GitHub Actions when changes are pushed to the `main` branch.
-
-### Required Secrets
-Configure these secrets in your GitHub repository:
-- `CLOUDFLARE_ACCOUNT_ID`: Your Cloudflare account ID
-- `CLOUDFLARE_ACCOUNT_TOKEN`: API token with Workers deployment permissions
-
-## 📚 Documentation
-
-The email-forwarder worker contains detailed documentation in its directory.
-
-## 🔒 Security
-
-- All authentication tokens are stored securely in Cloudflare Workers Secrets
-- API communications use Bearer token authentication
-- Email content is parsed and structured before forwarding
-- Domain-based routing ensures proper client isolation
-
-## 🛠️ Development
-
-### Prerequisites
-- Node.js 18+
-- Wrangler CLI
-- Access to Cloudflare account
-
-### Local Development
+### Domain Filtering (Optional)
+Create KV namespace:
 ```bash
-# Navigate to worker directory
-cd workers/email-forwarder
+wrangler kv:namespace create "DOMAIN_FILTER"
+```
 
-# Install dependencies
+Add to `wrangler.toml`:
+```toml
+[[kv_namespaces]]
+binding = "DOMAIN_FILTER"
+id = "your-namespace-id"
+```
+
+Set filter rules:
+```bash
+# Block domains
+wrangler kv:key put --binding=DOMAIN_FILTER "blocked:spam.com" "true"
+
+# Internal domains (both from/to = dropped)
+wrangler kv:key put --binding=DOMAIN_FILTER "internal:company.com" "true"
+```
+
+## Deployment
+
+### Per-Client (Recommended)
+1. Copy repository for each client
+2. Copy `wrangler.toml.example` to `wrangler.toml`
+3. Configure environment variables (`HTTP_WEBHOOK_URL`, `HTTP_WEBHOOK_API_TOKEN`)
+4. Optionally set up `DOMAIN_FILTER` KV namespace
+5. Deploy: `wrangler deploy`
+6. In Cloudflare Dashboard → Email Routing → Routing Rules, add rule to forward emails to this worker
+
+### Manual Deployment
+```bash
+wrangler deploy
+```
+
+## Email Output
+
+JSON format:
+```json
+{
+  "subject": "Email Subject",
+  "from": "sender@example.com",
+  "to": "recipient@example.com",
+  "date": "Mon, 1 Jan 2024 12:00:00 +0000",
+  "message-id": "<message-id>",
+  "headers": { "content-type": "...", ... },
+  "body": {
+    "text": "Plain text version",
+    "html": "<html>HTML version</html>"
+  },
+  "raw-content": "Complete raw email..."
+}
+```
+
+## Development
+
+```bash
 npm install
-
-# Start local development server
 npx wrangler dev
 ```
+
+Set environment variables via `.env` file for local development.

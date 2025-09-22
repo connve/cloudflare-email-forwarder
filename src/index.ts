@@ -1,10 +1,11 @@
 /**
  * Environment variables configuration for the email worker.
- * Static configuration for single-client deployment.
+ * Static configuration for single-client deployment with domain filtering.
  */
 interface Env {
   HTTP_WEBHOOK_URL: string;
   HTTP_WEBHOOK_API_TOKEN: string;
+  DOMAIN_FILTER: KVNamespace;
 }
 
 /**
@@ -50,6 +51,14 @@ function updateHeaders(headers: Record<string, string>, keysToRemove: string[]):
   return result;
 }
 
+/**
+ * Extracts the domain from an email address.
+ * Returns the domain part after the @ symbol (e.g., "user@example.com" → "example.com").
+ */
+function extractDomain(email: string): string {
+  return email.split('@')[1] || '';
+}
+
 
 export default {
   /**
@@ -66,6 +75,30 @@ export default {
     if (!env.HTTP_WEBHOOK_API_TOKEN) {
       console.error('Missing required environment variable: HTTP_WEBHOOK_API_TOKEN');
       throw new Error('Missing required environment variable: HTTP_WEBHOOK_API_TOKEN');
+    }
+
+    // Extract domains for filtering
+    const fromDomain = extractDomain(message.from);
+    const toDomain = extractDomain(message.to);
+
+    console.log(`Processing email: from=${message.from} (${fromDomain}), to=${message.to} (${toDomain})`);
+
+    // Check if domains should be filtered out
+    const fromBlocked = fromDomain ? await env.DOMAIN_FILTER.get(`blocked:${fromDomain}`) : null;
+    const toBlocked = toDomain ? await env.DOMAIN_FILTER.get(`blocked:${toDomain}`) : null;
+
+    if (fromBlocked || toBlocked) {
+      console.log(`Email blocked - domain filter matched: from=${fromBlocked ? fromDomain : 'allowed'}, to=${toBlocked ? toDomain : 'allowed'}`);
+      return;
+    }
+
+    // Check for internal emails (both domains are configured as internal)
+    const fromInternal = fromDomain ? await env.DOMAIN_FILTER.get(`internal:${fromDomain}`) : null;
+    const toInternal = toDomain ? await env.DOMAIN_FILTER.get(`internal:${toDomain}`) : null;
+
+    if (fromInternal && toInternal) {
+      console.log(`Internal email detected - dropping: from=${fromDomain}, to=${toDomain}`);
+      return;
     }
 
     const headerEntries = Object.fromEntries(message.headers.entries());
