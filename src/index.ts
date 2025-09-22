@@ -1,9 +1,10 @@
 /**
  * Environment variables configuration for the email worker.
- * Contains KV store binding for domain-based email routing configuration.
+ * Static configuration for single-client deployment.
  */
 interface Env {
-  EMAIL_ROUTING: KVNamespace;
+  HTTP_WEBHOOK_URL: string;
+  HTTP_WEBHOOK_API_TOKEN: string;
 }
 
 /**
@@ -24,15 +25,6 @@ interface EmailBody {
   html?: string;
 }
 
-/**
- * Configuration for routing emails for a specific domain.
- * Contains webhook URL and reference to the environment variable containing the auth token.
- */
-interface RoutingConfig {
-  webhook_url: string;
-  secret_name: string;
-  enabled?: boolean;
-}
 
 /**
  * Parses the raw email content to extract text and HTML body parts from multipart messages.
@@ -58,13 +50,6 @@ function updateHeaders(headers: Record<string, string>, keysToRemove: string[]):
   return result;
 }
 
-/**
- * Extracts the domain from an email address.
- * Returns the domain part after the @ symbol (e.g., "user@example.com" → "example.com").
- */
-function extractDomain(email: string): string {
-  return email.split('@')[1] || '';
-}
 
 export default {
   /**
@@ -72,6 +57,17 @@ export default {
    * Extracts email headers, body content, and sends structured data via HTTP POST with basic authentication.
    */
   async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Validate required environment variables
+    if (!env.HTTP_WEBHOOK_URL) {
+      console.error('Missing required environment variable: HTTP_WEBHOOK_URL');
+      throw new Error('Missing required environment variable: HTTP_WEBHOOK_URL');
+    }
+
+    if (!env.HTTP_WEBHOOK_API_TOKEN) {
+      console.error('Missing required environment variable: HTTP_WEBHOOK_API_TOKEN');
+      throw new Error('Missing required environment variable: HTTP_WEBHOOK_API_TOKEN');
+    }
+
     const headerEntries = Object.fromEntries(message.headers.entries());
 
     const rawContent = await new Response(message.raw).text();
@@ -91,49 +87,24 @@ export default {
     };
 
 
-    // Check domains for routing configuration.
-    const fromDomain = extractDomain(message.from);
-    const toDomain = extractDomain(message.to);
+    // Send to configured webhook
+    try {
+      const response = await fetch(env.HTTP_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${env.HTTP_WEBHOOK_API_TOKEN}`
+        },
+        body: JSON.stringify(email)
+      });
 
-    // Try to find routing configuration for either domain.
-    let routingConfig: RoutingConfig | null = null;
-    if (fromDomain) {
-      routingConfig = await env.EMAIL_ROUTING.get(fromDomain, 'json');
-    }
-    if (!routingConfig && toDomain) {
-      routingConfig = await env.EMAIL_ROUTING.get(toDomain, 'json');
-    }
-
-    if (routingConfig && routingConfig.enabled !== false) {
-      console.log(`Found routing config for domain: ${JSON.stringify(routingConfig)}`);
-
-      try {
-        // Get auth token from Secrets Store using secret name.
-        const authToken = await (env as any)[routingConfig.secret_name].get();
-        if (!authToken) {
-          console.error(`Auth token not found for secret: ${routingConfig.secret_name}`);
-          return;
-        }
-
-        const response = await fetch(routingConfig.webhook_url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
-          },
-          body: JSON.stringify(email)
-        });
-
-        if (response.ok) {
-          console.log('Successfully sent HTTP request to webhook.');
-        } else {
-          console.error('Webhook request failed:', response.status, response.statusText);
-        }
-      } catch (error) {
-        console.error('Error sending HTTP request:', error);
+      if (response.ok) {
+        console.log('Successfully sent HTTP request to webhook.');
+      } else {
+        console.error('Webhook request failed:', response.status, response.statusText);
       }
-    } else {
-      console.log(`No routing configuration found for domains: ${fromDomain}, ${toDomain}`);
+    } catch (error) {
+      console.error('Error sending HTTP request:', error);
     }
   },
 };
