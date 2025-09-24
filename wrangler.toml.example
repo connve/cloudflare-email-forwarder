@@ -1,10 +1,15 @@
 name = "email-forwarder"
 main = "src/index.ts"
 compatibility_date = "2024-09-18"
+workers_dev = false
 
-  [[kv_namespaces]]
-  binding = "DOMAIN_FILTER"
-  id = "your-domain-filter-namespace-id"
+# Required environment variables (set via wrangler secret put or dashboard):
+# HTTP_WEBHOOK_URL - Webhook endpoint for forwarding emails
+# HTTP_WEBHOOK_API_TOKEN - Bearer token for webhook authentication
+
+[[kv_namespaces]]
+binding = "DOMAIN_FILTER"
+id = "kv_id_here"
 
 [observability]
 enabled = true
