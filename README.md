@@ -6,12 +6,14 @@ Simple Cloudflare Workers email forwarder that parses incoming emails and sends 
 
 ```
 ├── src/
-│   └── index.ts              # Email worker
+│   ├── index.ts              # Main email worker
+│   ├── email-message.ts      # Email parsing and types
+│   └── utils.ts              # Utility functions
 ├── package.json
 ├── package-lock.json
-├── tsconfig.json            # TypeScript configuration
+├── tsconfig.json             # TypeScript configuration
 ├── worker-configuration.d.ts # Worker types
-├── wrangler.toml.example    # Wrangler config template
+├── wrangler.toml             # Wrangler configuration
 ├── .gitignore
 └── README.md
 ```
@@ -21,7 +23,7 @@ Simple Cloudflare Workers email forwarder that parses incoming emails and sends 
 - Parses email content (text, HTML, headers)
 - Forwards to webhook with Bearer token auth
 - Domain filtering (block domains, filter internal emails)
-- JSON output with kebab-case fields
+- JSON output with snake_case fields
 
 ## Configuration
 
@@ -57,7 +59,10 @@ wrangler kv:key put --binding=DOMAIN_FILTER "internal:company.com" "true"
 
 ### Per-Client (Recommended)
 1. Copy repository for each client
-2. Copy `wrangler.toml.example` to `wrangler.toml`
+2. Update `wrangler.toml`:
+   - Set unique worker `name`
+   - Add `workers_dev = false` to disable workers.dev subdomain
+   - Configure KV namespace ID if using domain filtering
 3. Configure environment variables (`HTTP_WEBHOOK_URL`, `HTTP_WEBHOOK_API_TOKEN`)
 4. Optionally set up `DOMAIN_FILTER` KV namespace
 5. Deploy: `wrangler deploy`
@@ -77,13 +82,13 @@ JSON format:
   "from": "sender@example.com",
   "to": "recipient@example.com",
   "date": "Mon, 1 Jan 2024 12:00:00 +0000",
-  "message-id": "<message-id>",
-  "headers": { "content-type": "...", ... },
+  "message_id": "<message-id>",
+  "headers": { "content_type": "...", ... },
   "body": {
     "text": "Plain text version",
     "html": "<html>HTML version</html>"
   },
-  "raw-content": "Complete raw email..."
+  "raw_content": "Complete raw email..."
 }
 ```
 
