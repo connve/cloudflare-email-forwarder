@@ -1,3 +1,6 @@
+import { createStructuredEmail, parseEmailBody, ForwardableEmailMessage } from "./email-message";
+import { extractDomain } from "./utils";
+
 /**
  * Environment variables configuration for the email worker.
  * Static configuration for single-client deployment with domain filtering.
@@ -8,56 +11,6 @@ interface Env {
   DOMAIN_FILTER: KVNamespace;
 }
 
-/**
- * Extended EmailMessage interface that includes access to raw email content and headers.
- * Provides the complete email data needed for processing and forwarding.
- */
-interface ForwardableEmailMessage extends EmailMessage {
-  raw: ReadableStream;
-  headers: Headers;
-}
-
-/**
- * Represents the parsed body content of an email message.
- * Contains optional text and HTML versions extracted from multipart messages.
- */
-interface EmailBody {
-  text?: string;
-  html?: string;
-}
-
-
-/**
- * Parses the raw email content to extract text and HTML body parts from multipart messages.
- * Uses regex to match Content-Type headers and extract the corresponding content sections.
- */
-function parseEmailBody(rawContent: string): EmailBody {
-  const textMatch = rawContent.match(/Content-Type: text\/plain[\s\S]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n$)/);
-  const htmlMatch = rawContent.match(/Content-Type: text\/html[\s\S]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n$)/);
-
-  return {
-    text: textMatch?.[1]?.trim(),
-    html: htmlMatch?.[1]?.trim()
-  };
-}
-
-/**
- * Removes specified keys from a headers object to avoid duplication.
- * Creates a copy of the original headers and deletes the specified keys.
- */
-function updateHeaders(headers: Record<string, string>, keysToRemove: string[]): Record<string, string> {
-  const result = { ...headers };
-  keysToRemove.forEach(key => delete result[key]);
-  return result;
-}
-
-/**
- * Extracts the domain from an email address.
- * Returns the domain part after the @ symbol (e.g., "user@example.com" → "example.com").
- */
-function extractDomain(email: string): string {
-  return email.split('@')[1] || '';
-}
 
 
 export default {
@@ -66,7 +19,7 @@ export default {
    * Extracts email headers, body content, and sends structured data via HTTP POST with basic authentication.
    */
   async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
-    // Validate required environment variables
+    // Validate required environment variables.
     if (!env.HTTP_WEBHOOK_URL) {
       console.error('Missing required environment variable: HTTP_WEBHOOK_URL');
       throw new Error('Missing required environment variable: HTTP_WEBHOOK_URL');
@@ -77,13 +30,13 @@ export default {
       throw new Error('Missing required environment variable: HTTP_WEBHOOK_API_TOKEN');
     }
 
-    // Extract domains for filtering
+    // Extract domains for filtering.
     const fromDomain = extractDomain(message.from);
     const toDomain = extractDomain(message.to);
 
     console.log(`Processing email: from=${message.from} (${fromDomain}), to=${message.to} (${toDomain})`);
 
-    // Check if domains should be filtered out
+    // Check if domains should be filtered out.
     const fromBlocked = fromDomain ? await env.DOMAIN_FILTER.get(`blocked:${fromDomain}`) : null;
     const toBlocked = toDomain ? await env.DOMAIN_FILTER.get(`blocked:${toDomain}`) : null;
 
@@ -92,7 +45,7 @@ export default {
       return;
     }
 
-    // Check for internal emails (both domains are configured as internal)
+    // Check for internal emails (both domains are configured as internal).
     const fromInternal = fromDomain ? await env.DOMAIN_FILTER.get(`internal:${fromDomain}`) : null;
     const toInternal = toDomain ? await env.DOMAIN_FILTER.get(`internal:${toDomain}`) : null;
 
@@ -101,26 +54,13 @@ export default {
       return;
     }
 
-    const headerEntries = Object.fromEntries(message.headers.entries());
-
     const rawContent = await new Response(message.raw).text();
     const body = parseEmailBody(rawContent);
 
-    const headers = updateHeaders(headerEntries, ['subject', 'from', 'to', 'date', 'message-id']);
-
-    const email = {
-      subject: headerEntries.subject || message.headers.get('subject') || '',
-      from: message.from,
-      to: message.to,
-      date: headerEntries.date || '',
-      "message-id": headerEntries['message-id'] || '',
-      headers,
-      body,
-      "raw-content": rawContent
-    };
+    const email = createStructuredEmail(message, body, rawContent);
 
 
-    // Send to configured webhook
+    // Send to configured webhook.
     try {
       const response = await fetch(env.HTTP_WEBHOOK_URL, {
         method: 'POST',
