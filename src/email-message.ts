@@ -67,16 +67,50 @@ export function updateHeaders(headers: Record<string, string>, keysToRemove: str
 }
 
 /**
+ * Decodes quoted-printable encoded content for proper UTF-8 character support.
+ * Converts sequences like =C5=9B=C4=87 back to proper Unicode characters like ść.
+ */
+function decodeQuotedPrintable(content: string): string {
+  // First remove soft line breaks
+  let decoded = content.replace(/=\r?\n/g, '');
+
+  // Convert quoted-printable hex sequences to bytes, then decode as UTF-8
+  const bytes: number[] = [];
+  let i = 0;
+
+  while (i < decoded.length) {
+    if (decoded[i] === '=' && i + 2 < decoded.length) {
+      const hex = decoded.substring(i + 1, i + 3);
+      if (/^[0-9A-F]{2}$/i.test(hex)) {
+        bytes.push(parseInt(hex, 16));
+        i += 3;
+      } else {
+        bytes.push(decoded.charCodeAt(i));
+        i++;
+      }
+    } else {
+      bytes.push(decoded.charCodeAt(i));
+      i++;
+    }
+  }
+
+  // Convert bytes to UTF-8 string
+  const uint8Array = new Uint8Array(bytes);
+  return new TextDecoder('utf-8').decode(uint8Array);
+}
+
+/**
  * Parses the raw email content to extract text and HTML body parts from multipart messages.
  * Uses regex to match Content-Type headers and extract the corresponding content sections.
+ * Applies quoted-printable decoding for proper UTF-8 character support.
  */
 export function parseEmailBody(rawContent: string): EmailBody {
   const textMatch = rawContent.match(/Content-Type: text\/plain[\s\S]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n$)/);
   const htmlMatch = rawContent.match(/Content-Type: text\/html[\s\S]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n$)/);
 
   return {
-    text: textMatch?.[1]?.trim(),
-    html: htmlMatch?.[1]?.trim()
+    text: textMatch?.[1] ? decodeQuotedPrintable(textMatch[1].trim()) : undefined,
+    html: htmlMatch?.[1] ? decodeQuotedPrintable(htmlMatch[1].trim()) : undefined
   };
 }
 
