@@ -1,5 +1,4 @@
-import { createStructuredEmail, parseEmailBody, ForwardableEmailMessage } from "./email-message";
-import { extractDomain } from "./utils";
+import { createStructuredEmail, parseEmailBody, ForwardableEmailMessage, getOriginalSender, extractDomain } from "./email-message";
 
 /**
  * Environment variables configuration for the email worker.
@@ -31,17 +30,15 @@ export default {
     }
 
     // Extract domains for filtering.
-    const fromDomain = extractDomain(message.from);
-    const toDomain = extractDomain(message.to);
-
-    console.log(`Processing email: from=${message.from} (${fromDomain}), to=${message.to} (${toDomain})`);
+    const fromDomain = extractDomain(getOriginalSender(message));
+    const toDomain = extractDomain(message.headers.get('to') || message.to);
 
     // Check if domains should be filtered out.
     const fromBlocked = fromDomain ? await env.DOMAIN_FILTER.get(`blocked:${fromDomain}`) : null;
     const toBlocked = toDomain ? await env.DOMAIN_FILTER.get(`blocked:${toDomain}`) : null;
 
     if (fromBlocked || toBlocked) {
-      console.log(`Email blocked - domain filter matched: from=${fromBlocked ? fromDomain : 'allowed'}, to=${toBlocked ? toDomain : 'allowed'}`);
+      console.log(`Email addres blocked: from=${fromDomain}, to=${toDomain}`);
       return;
     }
 
@@ -50,7 +47,7 @@ export default {
     const toInternal = toDomain ? await env.DOMAIN_FILTER.get(`internal:${toDomain}`) : null;
 
     if (fromInternal && toInternal) {
-      console.log(`Internal email detected - dropping: from=${fromDomain}, to=${toDomain}`);
+      console.log(`Internal email dropped: from=${fromDomain}, to=${toDomain}`);
       return;
     }
 
@@ -72,9 +69,9 @@ export default {
       });
 
       if (response.ok) {
-        console.log('Successfully sent HTTP request to webhook.');
+        console.log(`Email forwarded: from=${fromDomain}, to=${toDomain}`);
       } else {
-        console.error('Webhook request failed:', response.status, response.statusText);
+        console.error(`Webhook failed (${response.status}): from=${fromDomain}, to=${toDomain}`);
       }
     } catch (error) {
       console.error('Error sending HTTP request:', error);

@@ -24,6 +24,8 @@ export interface StructuredEmail {
   subject: string;
   from: string;
   to: string;
+  cc?: string;
+  bcc?: string;
   date: string;
   message_id: string;
   headers: Record<string, string>;
@@ -32,10 +34,21 @@ export interface StructuredEmail {
 }
 
 /**
+ * Extracts the domain from an email address.
+ * Handles formatted addresses like "Name <user@example.com>" and returns the domain part.
+ */
+export function extractDomain(email: string): string {
+  // Extract email from formats like "Name <user@example.com>" or just "user@example.com"
+  const emailMatch = email.match(/<(.+@.+)>/) || [null, email];
+  const cleanEmail = emailMatch[1];
+  return cleanEmail.split('@')[1] || '';
+}
+
+/**
  * Removes specified keys from a headers object to avoid duplication.
  * Creates a copy of the original headers, converts hyphenated keys to snake_case, and deletes specified keys.
  */
-function updateHeaders(headers: Record<string, string>, keysToRemove: string[]): Record<string, string> {
+export function updateHeaders(headers: Record<string, string>, keysToRemove: string[]): Record<string, string> {
   const result: Record<string, string> = {};
 
   // Convert all header keys from hyphenated to snake_case and copy values
@@ -68,6 +81,17 @@ export function parseEmailBody(rawContent: string): EmailBody {
 }
 
 /**
+ * Extracts the original sender from an email message, handling forwarded emails.
+ * For forwarded emails, returns the original sender from Return-Path header.
+ * For regular emails, returns the message.from value.
+ */
+export function getOriginalSender(message: { from: string; headers: Headers }): string {
+  const returnPath = message.headers.get('return-path');
+  const isForwarded = message.headers.get('x-forwarded-to') || message.headers.get('x-forwarded-for');
+  return isForwarded && returnPath ? returnPath.replace(/[<>]/g, '') : message.from;
+}
+
+/**
  * Creates a structured email object from an email message.
  * Handles header cleaning and body parsing internally.
  */
@@ -76,14 +100,16 @@ export function createStructuredEmail(
   body: EmailBody,
   rawContent: string
 ): StructuredEmail {
-  // Convert headers to object and clean duplicated fields
+
   const headerEntries = Object.fromEntries(message.headers.entries());
-  const cleanHeaders = updateHeaders(headerEntries, ['subject', 'from', 'to', 'date', 'message-id']);
+  const cleanHeaders = updateHeaders(headerEntries, ['subject', 'from', 'to', 'cc', 'bcc', 'date', 'message-id']);
 
   return {
     subject: message.headers.get('subject') || '',
-    from: message.from,
-    to: message.to,
+    from: getOriginalSender(message),
+    to: message.headers.get('to') || message.to,
+    cc: message.headers.get('cc') || '',
+    bcc: message.headers.get('bcc') || '',
     date: message.headers.get('date') || '',
     message_id: message.headers.get('message-id') || '',
     headers: cleanHeaders,
