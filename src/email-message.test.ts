@@ -149,6 +149,54 @@ Content-Type: text/html; charset="UTF-8"
 
     expect(result.text).toBe('Windows text\r\nwith CRLF');
   });
+
+  it('should decode quoted-printable encoded UTF-8 characters', () => {
+    const rawContent = `Content-Type: multipart/alternative; boundary="utf8test"
+
+--utf8test
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+Oto przyk=C5=82ad wiadomo=C5=9Bci z tre=C5=9B=C4=87 w j=C4=99zyku polskim.
+
+--utf8test--`;
+
+    const result = parseEmailBody(rawContent);
+
+    expect(result.text).toBe('Oto przykład wiadomości z treść w języku polskim.');
+  });
+
+  it('should handle mixed content with some quoted-printable encoding', () => {
+    const rawContent = `Content-Type: multipart/alternative; boundary="mixed"
+
+--mixed
+Content-Type: text/plain; charset="UTF-8"
+
+Regular text with =C5=82=C3=B3=C5=BC and normal characters.
+
+--mixed--`;
+
+    const result = parseEmailBody(rawContent);
+
+    expect(result.text).toBe('Regular text with łóż and normal characters.');
+  });
+
+  it('should handle quoted-printable soft line breaks', () => {
+    const rawContent = `Content-Type: multipart/alternative; boundary="softbreak"
+
+--softbreak
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+This is a very long line that has been broken using quoted-printable=
+ soft line breaks for better formatting.
+
+--softbreak--`;
+
+    const result = parseEmailBody(rawContent);
+
+    expect(result.text).toBe('This is a very long line that has been broken using quoted-printable soft line breaks for better formatting.');
+  });
 });
 
 describe('createStructuredEmail', () => {
