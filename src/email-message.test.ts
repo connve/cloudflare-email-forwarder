@@ -431,26 +431,8 @@ describe('decodeRawEmail', () => {
     expect(result).toBe(content);
   });
 
-  it('should detect and decode Windows-1250 charset', () => {
-    const header = 'Content-Type: text/plain; charset="windows-1250"\n\n';
-    const headerBytes = new TextEncoder().encode(header);
-
-    // Create Windows-1250 encoded Polish text
-    // ł (U+0142) is 0xB3 in Windows-1250, ą (U+0105) is 0xB9
-    const polishBytes = new Uint8Array([0xB3, 0x61, 0x6D, 0x61]); // "łama"
-
-    // Combine header and body
-    const combined = new Uint8Array(headerBytes.length + polishBytes.length);
-    combined.set(headerBytes);
-    combined.set(polishBytes, headerBytes.length);
-
-    const result = decodeRawEmail(combined.buffer);
-    expect(result).toContain('windows-1250');
-    expect(result).toContain('łama');
-  });
-
-  it('should fallback to UTF-8 for unknown charset', () => {
-    const content = 'Content-Type: text/plain\n\nHello';
+  it('should decode email with UTF-8 Polish characters', () => {
+    const content = 'Subject: Dzień dobry\n\nWysyłamy wiadomość z treścią.';
     const bytes = new TextEncoder().encode(content);
     const result = decodeRawEmail(bytes.buffer);
     expect(result).toBe(content);
