@@ -97,7 +97,7 @@ function detectCharsetFromBytes(bytes: Uint8Array): string {
  * First detects charset from headers, then decodes the entire content.
  * Also attempts Windows-1250 decoding as a fallback for corrupted forwarded emails.
  */
-export function decodeRawEmail(rawBytes: ArrayBuffer): string {
+export function decodeRawEmail(rawBytes: ArrayBufferLike): string {
   const bytes = new Uint8Array(rawBytes);
   const charset = detectCharsetFromBytes(bytes);
 
