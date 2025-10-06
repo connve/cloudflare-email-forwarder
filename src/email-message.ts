@@ -67,66 +67,11 @@ export function updateHeaders(headers: Record<string, string>, keysToRemove: str
 }
 
 /**
- * Detects the charset from email headers in raw bytes.
- * Reads the first part of the email to find charset declarations.
- */
-function detectCharsetFromBytes(bytes: Uint8Array): string {
-  // Read first 2000 bytes as ASCII to find headers
-  const headerPreview = new TextDecoder('ascii').decode(bytes.slice(0, 2000));
-
-  // Look for charset in Content-Type headers
-  const charsetMatch = headerPreview.match(/charset=["']?([a-zA-Z0-9\-]+)/i);
-
-  if (charsetMatch) {
-    const charset = charsetMatch[1].toLowerCase();
-
-    // Normalize charset names
-    if (charset === 'iso-8859-2' || charset === 'windows-1250' || charset === 'cp1250') {
-      return 'windows-1250';
-    }
-
-    return charset;
-  }
-
-  // Default to UTF-8
-  return 'utf-8';
-}
-
-/**
- * Decodes raw email bytes with proper charset detection.
- * First detects charset from headers, then decodes the entire content.
- * Also attempts Windows-1250 decoding as a fallback for corrupted forwarded emails.
+ * Decodes raw email bytes as UTF-8.
  */
 export function decodeRawEmail(rawBytes: ArrayBufferLike): string {
   const bytes = new Uint8Array(rawBytes);
-  const charset = detectCharsetFromBytes(bytes);
-
-  let decoded: string;
-  try {
-    decoded = new TextDecoder(charset).decode(bytes);
-  } catch {
-    // Fallback to UTF-8 if charset not supported
-    decoded = new TextDecoder('utf-8').decode(bytes);
-  }
-
-  // If charset claims UTF-8, also try Windows-1250 and compare special character count
-  // This handles cases where Cloudflare Email Routing corrupts Windows-1250 emails
-  if (charset === 'utf-8') {
-    try {
-      const win1250Decoded = new TextDecoder('windows-1250').decode(bytes);
-      const utf8Count = (decoded.match(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g) || []).length;
-      const win1250Count = (win1250Decoded.match(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g) || []).length;
-
-      // Use Windows-1250 if it produces more special characters
-      if (win1250Count > utf8Count) {
-        return win1250Decoded;
-      }
-    } catch {
-      // Windows-1250 decoding failed, continue with original
-    }
-  }
-
-  return decoded;
+  return new TextDecoder('utf-8').decode(bytes);
 }
 
 /**
