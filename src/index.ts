@@ -1,4 +1,4 @@
-import { createStructuredEmail, parseEmailBody, ForwardableEmailMessage, getOriginalSender, extractDomain } from "./email-message";
+import { createStructuredEmail, parseEmailBody, ForwardableEmailMessage, getOriginalSender, extractDomain, decodeRawEmail } from "./email-message";
 
 /**
  * Environment variables configuration for the email worker.
@@ -51,7 +51,9 @@ export default {
       return;
     }
 
-    const rawContent = await new Response(message.raw).text();
+    // Read raw bytes and decode with proper charset detection
+    const rawBytes = await new Response(message.raw).arrayBuffer();
+    const rawContent = decodeRawEmail(rawBytes);
     const body = parseEmailBody(rawContent);
 
     const email = createStructuredEmail(message, body, rawContent);
