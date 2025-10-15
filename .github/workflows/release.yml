@@ -47,11 +47,17 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          if [ -z "${{ needs.detect-version.outputs.previous-tag }}" ]; then
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges ${{ needs.detect-version.outputs.tag }})
+          # Get the previous tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${{ needs.detect-version.outputs.tag }}^ 2>/dev/null || echo "")
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            # First release - show only commits for current tag
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges $(git rev-list --max-parents=0 HEAD)..${{ needs.detect-version.outputs.tag }})
           else
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges ${{ needs.detect-version.outputs.previous-tag }}..${{ needs.detect-version.outputs.tag }})
+            # Show commits between previous tag and current tag
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges ${PREVIOUS_TAG}..${{ needs.detect-version.outputs.tag }})
           fi
+
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
