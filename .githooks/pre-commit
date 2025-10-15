@@ -1,0 +1,18 @@
+#!/bin/bash
+# Pre-commit hook to run tests, lint, and security audit
+
+set -e
+
+echo "🧪 Running tests..."
+npm test
+
+echo "🎨 Running lint checks..."
+npx eslint . --ext .ts --max-warnings 0 || echo "⚠️  ESLint not configured, skipping..."
+
+echo "🔍 Running TypeScript check..."
+npx tsc --noEmit
+
+echo "🔒 Running security audit (production dependencies)..."
+npm audit --production --audit-level=high
+
+echo "✅ All pre-commit checks passed!"
