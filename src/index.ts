@@ -1,4 +1,5 @@
 import { createStructuredEmail, parseEmailBody, ForwardableEmailMessage, getOriginalSender, extractDomain, decodeRawEmail } from "./email-message";
+import { saveFailedRequest, getRetryableRequests, retryFailedRequest, updateFailedRequest } from "./retry";
 
 /**
  * Environment variables configuration for the email worker.
@@ -8,6 +9,7 @@ interface Env {
   HTTP_WEBHOOK_URL: string;
   HTTP_WEBHOOK_API_TOKEN: string;
   DOMAIN_FILTER: KVNamespace;
+  RETRY_QUEUE: KVNamespace;
 }
 
 
@@ -73,10 +75,65 @@ export default {
       if (response.ok) {
         console.log(`Email forwarded: from=${fromDomain}, to=${toDomain}`);
       } else {
-        console.error(`Webhook failed (${response.status}): from=${fromDomain}, to=${toDomain}`);
+        // Webhook failed - save for retry
+        const errorMsg = `Webhook failed with status ${response.status}`;
+        console.error(`${errorMsg}: from=${fromDomain}, to=${toDomain}`);
+        await saveFailedRequest(env.RETRY_QUEUE, email, errorMsg);
       }
     } catch (error) {
-      console.error('Error sending HTTP request:', error);
+      // Network or other error - save for retry
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('Error sending HTTP request:', errorMsg);
+      await saveFailedRequest(env.RETRY_QUEUE, email, errorMsg);
+    }
+  },
+
+  /**
+   * Scheduled handler that processes failed requests and retries them with exponential backoff.
+   * This should be configured as a Cron Trigger in wrangler.toml to run every minute.
+   * Example: crons = ["* * * * *"]
+   */
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    console.log('Running retry processor...');
+
+    // Validate required environment variables
+    if (!env.HTTP_WEBHOOK_URL || !env.HTTP_WEBHOOK_API_TOKEN) {
+      console.error('Missing required environment variables for retry processor');
+      return;
+    }
+
+    try {
+      // Fetch all requests ready for retry
+      const retryableRequests = await getRetryableRequests(env.RETRY_QUEUE);
+
+      if (retryableRequests.length === 0) {
+        console.log('No requests ready for retry');
+        return;
+      }
+
+      console.log(`Processing ${retryableRequests.length} retry requests`);
+
+      // Process each request
+      for (const { key, request } of retryableRequests) {
+        const result = await retryFailedRequest(
+          request,
+          env.HTTP_WEBHOOK_URL,
+          env.HTTP_WEBHOOK_API_TOKEN
+        );
+
+        // Update the request based on result
+        await updateFailedRequest(
+          env.RETRY_QUEUE,
+          key,
+          request,
+          result.success,
+          result.error
+        );
+      }
+
+      console.log('Retry processor completed');
+    } catch (error) {
+      console.error('Error in retry processor:', error);
     }
   },
 };
