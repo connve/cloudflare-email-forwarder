@@ -12,10 +12,10 @@ import {
 import type { StructuredEmail } from './email-message';
 
 // Mock KV namespace for testing
-class MockKVNamespace implements KVNamespace {
+class MockKVNamespace {
   private store = new Map<string, string>();
 
-  async get(key: string): Promise<string | null> {
+  async get(key: string, type?: string): Promise<string | null> {
     return this.store.get(key) || null;
   }
 
@@ -27,17 +27,17 @@ class MockKVNamespace implements KVNamespace {
     this.store.delete(key);
   }
 
-  async list(options?: { prefix?: string; limit?: number }): Promise<{ keys: Array<{ name: string }> }> {
+  async list(options?: { prefix?: string; limit?: number }): Promise<{ keys: Array<{ name: string }>, list_complete: boolean, cacheStatus: null }> {
     const keys = Array.from(this.store.keys())
       .filter(key => !options?.prefix || key.startsWith(options.prefix))
       .slice(0, options?.limit || 1000)
       .map(name => ({ name }));
-    return { keys };
+    return { keys, list_complete: true, cacheStatus: null };
   }
 
-  // Additional methods required by KVNamespace interface
-  getWithMetadata(): Promise<any> { throw new Error('Not implemented'); }
-  delete(): Promise<void> { throw new Error('Not implemented'); }
+  async getWithMetadata(): Promise<any> {
+    throw new Error('Not implemented');
+  }
 }
 
 describe('calculateRetryDelay', () => {
@@ -96,7 +96,7 @@ describe('saveFailedRequest', () => {
   });
 
   it('should save a failed request to KV', async () => {
-    const requestId = await saveFailedRequest(kv, mockEmail, 'Test error');
+    const requestId = await saveFailedRequest(kv as any, mockEmail, 'Test error');
 
     expect(requestId).toBeDefined();
 
@@ -105,7 +105,7 @@ describe('saveFailedRequest', () => {
   });
 
   it('should set initial attempt count to 0', async () => {
-    const requestId = await saveFailedRequest(kv, mockEmail);
+    await saveFailedRequest(kv as any, mockEmail);
     const keys = await kv.list({ prefix: 'retry:' });
     const value = await kv.get(keys.keys[0].name);
     const request = JSON.parse(value!) as FailedRequest;
@@ -115,7 +115,7 @@ describe('saveFailedRequest', () => {
 
   it('should calculate next retry timestamp with 1 minute delay', async () => {
     const now = Date.now();
-    await saveFailedRequest(kv, mockEmail);
+    await saveFailedRequest(kv as any, mockEmail);
 
     const keys = await kv.list({ prefix: 'retry:' });
     const value = await kv.get(keys.keys[0].name);
@@ -156,7 +156,7 @@ describe('updateFailedRequest', () => {
     const key = 'retry:123456:test-123';
     await kv.put(key, JSON.stringify(mockRequest));
 
-    await updateFailedRequest(kv, key, mockRequest, true);
+    await updateFailedRequest(kv as any, key, mockRequest, true);
 
     const value = await kv.get(key);
     expect(value).toBeNull();
@@ -170,7 +170,7 @@ describe('updateFailedRequest', () => {
     const key = 'retry:123456:test-123';
     await kv.put(key, JSON.stringify(mockRequest));
 
-    await updateFailedRequest(kv, key, mockRequest, false, 'New error');
+    await updateFailedRequest(kv as any, key, mockRequest, false, 'New error');
 
     const keys = await kv.list({ prefix: 'retry:' });
     expect(keys.keys.length).toBe(1);
@@ -187,7 +187,7 @@ describe('updateFailedRequest', () => {
     mockRequest.attemptCount = MAX_RETRY_ATTEMPTS - 1; // 9
     await kv.put(key, JSON.stringify(mockRequest));
 
-    await updateFailedRequest(kv, key, mockRequest, false, 'Final error');
+    await updateFailedRequest(kv as any, key, mockRequest, false, 'Final error');
 
     // Should not have retry: key anymore
     const retryKeys = await kv.list({ prefix: 'retry:' });
@@ -206,7 +206,7 @@ describe('updateFailedRequest', () => {
     const key = 'retry:123456:test-123';
     await kv.put(key, JSON.stringify(mockRequest));
 
-    await updateFailedRequest(kv, key, mockRequest, false);
+    await updateFailedRequest(kv as any, key, mockRequest, false);
 
     const keys = await kv.list({ prefix: 'retry:' });
     const value = await kv.get(keys.keys[0].name);
@@ -253,7 +253,7 @@ describe('getRetryableRequests', () => {
     await kv.put(`retry:${pastTimestamp}:past`, JSON.stringify(pastRequest));
     await kv.put(`retry:${futureTimestamp}:future`, JSON.stringify(futureRequest));
 
-    const results = await getRetryableRequests(kv);
+    const results = await getRetryableRequests(kv as any);
 
     expect(results.length).toBe(1);
     expect(results[0].request.id).toBe('past');
@@ -274,7 +274,7 @@ describe('getRetryableRequests', () => {
       await kv.put(`retry:${now}:request-${i}`, JSON.stringify(request));
     }
 
-    const results = await getRetryableRequests(kv, 3);
+    const results = await getRetryableRequests(kv as any, 3);
     expect(results.length).toBeLessThanOrEqual(3);
   });
 });
@@ -304,7 +304,7 @@ describe('retryFailedRequest', () => {
 
   it('should return success for successful retry', async () => {
     // Mock successful fetch
-    global.fetch = async () => ({
+    globalThis.fetch = async () => ({
       ok: true,
       status: 200
     }) as Response;
@@ -317,7 +317,7 @@ describe('retryFailedRequest', () => {
 
   it('should return failure for non-200 status', async () => {
     // Mock failed fetch
-    global.fetch = async () => ({
+    globalThis.fetch = async () => ({
       ok: false,
       status: 500
     }) as Response;
@@ -330,7 +330,7 @@ describe('retryFailedRequest', () => {
 
   it('should return failure for network error', async () => {
     // Mock network error
-    global.fetch = async () => {
+    globalThis.fetch = async () => {
       throw new Error('Network error');
     };
 

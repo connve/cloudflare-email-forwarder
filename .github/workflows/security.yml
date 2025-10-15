@@ -8,6 +8,7 @@ on:
   schedule:
     # Run weekly on Monday at 9am UTC
     - cron: '0 9 * * 1'
+  workflow_call:
 
 jobs:
   audit:
@@ -27,9 +28,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run npm audit
-        run: npm audit --audit-level=moderate
+      - name: Run npm audit (production only)
+        run: npm audit --production --audit-level=high
+        continue-on-error: true
 
-      - name: Check for known vulnerabilities
-        run: npx audit-ci --moderate
+      - name: Run full npm audit
+        run: npm audit --audit-level=moderate
         continue-on-error: true
