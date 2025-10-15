@@ -1,4 +1,4 @@
-name = "email-forwarder"
+name = "cloudflare-email-forwarder"
 main = "src/index.ts"
 compatibility_date = "2024-09-18"
 workers_dev = false
@@ -7,9 +7,19 @@ workers_dev = false
 # HTTP_WEBHOOK_URL - Webhook endpoint for forwarding emails
 # HTTP_WEBHOOK_API_TOKEN - Bearer token for webhook authentication
 
+# Required: KV namespace for retry queue
+[[kv_namespaces]]
+binding = "RETRY_QUEUE"
+id = "your-retry-queue-kv-id"
+
+# Optional: KV namespace for domain filtering
 [[kv_namespaces]]
 binding = "DOMAIN_FILTER"
-id = "kv_id_here"
+id = "your-domain-filter-kv-id"
+
+# Cron trigger to process retry queue every minute
+[triggers]
+crons = ["* * * * *"]
 
 [observability]
 enabled = true

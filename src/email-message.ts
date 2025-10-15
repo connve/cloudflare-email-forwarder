@@ -14,6 +14,7 @@ export interface ForwardableEmailMessage extends EmailMessage {
 export interface EmailBody {
   text?: string;
   html?: string;
+
 }
 
 /**
