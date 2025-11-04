@@ -84,7 +84,7 @@ export default {
         if (env.RETRY_QUEUE) {
           await saveFailedRequest(env.RETRY_QUEUE, email, errorMsg);
         } else {
-          console.error('RETRY_QUEUE not configure, email will not be retried:', JSON.stringify(email));
+          console.error('RETRY_QUEUE not configured, email will not be retried:', JSON.stringify(email));
         }
       }
     } catch (error) {
@@ -95,7 +95,7 @@ export default {
       if (env.RETRY_QUEUE) {
         await saveFailedRequest(env.RETRY_QUEUE, email, errorMsg);
       } else {
-        console.error('RETRY_QUEUE not configure, email will not be retried:', JSON.stringify(email));
+        console.error('RETRY_QUEUE not configured, email will not be retried:', JSON.stringify(email));
       }
     }
   },
