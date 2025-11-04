@@ -30,24 +30,25 @@ Cloudflare Workers email forwarder that parses incoming emails and sends them to
 
 - Parses multipart email content (text, HTML, headers)
 - Forwards to webhook with Bearer token authentication
-- Automatic retry with exponential backoff for failed webhook requests
-- Circuit breaker (max 10 attempts over ~15 hours)
-- Domain filtering (block spam domains, filter internal emails)
+- Optional automatic retry with exponential backoff for failed requests
+- Optional domain filtering (block spam domains, prevent internal email loops)
 - Auto-forwarded email detection with original sender extraction
 - Handles BCC, CC, and complex email routing
-- JSON output with snake_case fields
-- Test coverage (40+ tests)
 
 ## Configuration
 
 ### Environment Variables
-Set via `wrangler secret put` or Cloudflare Dashboard:
+
+Required. Set via `wrangler secret put` or Cloudflare Dashboard:
 
 - `HTTP_WEBHOOK_URL` - Webhook endpoint for email forwarding
 - `HTTP_WEBHOOK_API_TOKEN` - Bearer token for webhook authentication
 
-### Retry Queue (Required)
-Create KV namespace for failed request retries:
+### Retry Queue (Optional)
+
+Without retry queue, failed webhook requests are logged but not retried. Recommended for production.
+
+To enable automatic retry with exponential backoff:
 ```bash
 wrangler kv:namespace create "RETRY_QUEUE"
 ```
@@ -56,17 +57,15 @@ Add to `wrangler.toml`:
 ```toml
 [[kv_namespaces]]
 binding = "RETRY_QUEUE"
-id = "your-retry-queue-namespace-id"
+id = "your-namespace-id"
 
-# Cron trigger runs every minute to process retry queue
 [triggers]
 crons = ["* * * * *"]
 ```
 
-Cloudflare invokes the `scheduled()` handler at the specified interval. The worker handles both incoming emails (`email()` handler) and retry processing (`scheduled()` handler).
-
 ### Domain Filtering (Optional)
-Create KV namespace:
+
+Block spam domains or prevent internal email loops.
 ```bash
 wrangler kv:namespace create "DOMAIN_FILTER"
 ```
@@ -75,10 +74,10 @@ Add to `wrangler.toml`:
 ```toml
 [[kv_namespaces]]
 binding = "DOMAIN_FILTER"
-id = "your-domain-filter-namespace-id"
+id = "your-namespace-id"
 ```
 
-Set filter rules:
+Configure rules:
 ```bash
 # Block spam domains
 wrangler kv:key put --binding=DOMAIN_FILTER "blocked:spam.com" "true"
@@ -89,25 +88,17 @@ wrangler kv:key put --binding=DOMAIN_FILTER "internal:yourcompany.com" "true"
 
 ## Deployment
 
-### Per-Client
-1. Fork/copy repository for each client
-2. Update `wrangler.toml`:
+1. Add repository as github submodule
+2. Configure `wrangler.toml`:
    - Set unique worker `name`
    - Add `workers_dev = false` to disable workers.dev subdomain
-   - Configure KV namespace ID if using domain filtering
-3. Configure environment variables (`HTTP_WEBHOOK_URL`, `HTTP_WEBHOOK_API_TOKEN`)
-4. Optionally set up `DOMAIN_FILTER` KV namespace for spam/internal filtering
-5. Deploy: `wrangler deploy`
-6. In Cloudflare Dashboard → Email Routing → Routing Rules, add rule to forward emails to this worker
-
-### Manual Deployment
-```bash
-wrangler deploy
-```
+   - Add `RETRY_QUEUE` KV namespace (optional, recommended for production)
+   - Add `DOMAIN_FILTER` KV namespace (optional)
+3. Set environment variables: `HTTP_WEBHOOK_URL`, `HTTP_WEBHOOK_API_TOKEN`
+4. Deploy: `wrangler deploy`
+5. Configure Email Routing in Cloudflare Dashboard to forward to this worker
 
 ## Email Output Format
-
-Structured JSON with snake_case field names:
 
 ```json
 {
@@ -133,100 +124,26 @@ Structured JSON with snake_case field names:
 ### Special Handling
 - Auto-forwarded emails: Extracts original sender from `Return-Path` header
 - BCC scenarios: Separates original recipient from BCC recipient
-- Headers: Converts hyphenated headers to snake_case, removes duplicates
-- Internal filtering: Prevents email loops by dropping internal-to-internal emails
-
-## Development & Testing
-
-### Install & Run
-```bash
-npm install
-npx wrangler dev
-```
-
-### Testing
-```bash
-# Run all tests
-npm test
-
-# Run tests with UI
-npm run test:ui
-```
-
-
-### Environment
-Set environment variables via `.env` file for local development:
-```env
-HTTP_WEBHOOK_URL=https://your-webhook-endpoint.com/api/emails
-HTTP_WEBHOOK_API_TOKEN=your-bearer-token
-```
-
-## Use Cases
-
-- Customer support email routing
-- Email-to-webhook integrations
-- Email analytics and processing
-- Multi-tenant email forwarding
-- Spam filtering and email security
-
-## Contributing
-
-### Setup
-
-Enable pre-commit hooks to run tests, TypeScript checks, lint, and security audits:
-```bash
-git config core.hooksPath .githooks
-```
-
-The pre-commit hook will automatically run before each commit:
-- Tests (`npm test`)
-- Lint checks (`npx eslint . --ext .ts --max-warnings 0`)
-- TypeScript compilation (`npx tsc --noEmit`)
-- Security audit (`npm audit --production --audit-level=high`)
-
-### Bypassing Hooks
-
-Only when necessary:
-```bash
-git commit --no-verify -m "Your commit message"
-```
-
-## License
-
-This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+- Headers: Converts hyphenated headers to snake_case
+- Internal filtering: Drops internal-to-internal emails when configured
 
 ## Retry Mechanism
 
-### How It Works
+When webhook delivery fails, the email is saved to `RETRY_QUEUE` and retried with exponential backoff:
 
-When a webhook request fails (network error, timeout, non-2xx status):
-1. Email is automatically saved to `RETRY_QUEUE` KV namespace
-2. Retry scheduled with exponential backoff starting at 1 minute
-3. Cron trigger (`scheduled()` handler) runs every minute to process pending retries
-4. Uses current `HTTP_WEBHOOK_URL` and `HTTP_WEBHOOK_API_TOKEN` from environment
+**Schedule**: 1m → 2m → 4m → 8m → 16m → 32m → 1h → 2h → 4h → 8h
 
-### Retry Schedule
+After 10 attempts (~15 hours), requests move to dead letter queue (`failed:*` prefix).
 
-**Exponential Backoff**: 1min → 2min → 4min → 8min → 16min → 32min → 1hr → 2hr → 4hr → 8hr
-
-**Circuit Breaker**: After 10 failed attempts (~15 hours total), requests are permanently failed and moved to dead letter queue (`failed:*` prefix)
-
-**Why 1-minute minimum?** Cloudflare Workers cron triggers have a minimum interval of 1 minute, so the retry schedule is designed to match this limitation.
-
-### Security & Credentials
-
-- No credentials stored in KV - only email data
-- All retries use current environment variables
-- Rotating credentials automatically applies to pending retries
+Retries use current environment variables, so credential rotation applies automatically.
 
 ### Monitoring
 
-View retry queue:
 ```bash
 # List pending retries
 wrangler kv:key list --binding RETRY_QUEUE --prefix "retry:"
 
-# List permanently failed requests (dead letter queue)
+# List failed requests (dead letter queue)
 wrangler kv:key list --binding RETRY_QUEUE --prefix "failed:"
 
 # View specific retry
@@ -236,22 +153,26 @@ wrangler kv:key get --binding RETRY_QUEUE "retry:{timestamp}:{id}"
 wrangler tail
 ```
 
-Key log messages:
-- `Saved failed request {id} for retry in {delay}m` - Initial failure saved
-- `Processing {count} retry requests` - Cron processing batch
-- `Request {id} succeeded after {attempts} attempts` - Successful retry
-- `Request {id} permanently failed after 10 attempts` - Moved to dead letter queue
 
-### Manual Recovery
+## Development
 
-To manually retry a permanently failed request:
 ```bash
-# Get the failed request data
-wrangler kv:key get --binding RETRY_QUEUE "failed:{timestamp}:{id}" > failed-email.json
-
-# Delete from dead letter queue
-wrangler kv:key delete --binding RETRY_QUEUE "failed:{timestamp}:{id}"
-
-# POST manually to your webhook or fix issue and recreate as retry entry
+npm install
+npx wrangler dev
+npm test
 ```
 
+Local environment variables can be set via `.env` file.
+
+## Contributing
+
+Enable pre-commit hooks:
+```bash
+git config core.hooksPath .githooks
+```
+
+Hooks run tests, TypeScript checks, lint, and security audits before each commit.
+
+## License
+
+This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
