@@ -86,18 +86,6 @@ wrangler kv:key put --binding=DOMAIN_FILTER "blocked:spam.com" "true"
 wrangler kv:key put --binding=DOMAIN_FILTER "internal:yourcompany.com" "true"
 ```
 
-## Deployment
-
-1. Add repository as github submodule
-2. Configure `wrangler.toml`:
-   - Set unique worker `name`
-   - Add `workers_dev = false` to disable workers.dev subdomain
-   - Add `RETRY_QUEUE` KV namespace (optional, recommended for production)
-   - Add `DOMAIN_FILTER` KV namespace (optional)
-3. Set environment variables: `HTTP_WEBHOOK_URL`, `HTTP_WEBHOOK_API_TOKEN`
-4. Deploy: `wrangler deploy`
-5. Configure Email Routing in Cloudflare Dashboard to forward to this worker
-
 ## Email Output Format
 
 ```json
@@ -172,6 +160,92 @@ git config core.hooksPath .githooks
 ```
 
 Hooks run tests, TypeScript checks, lint, and security audits before each commit.
+
+## Deployment
+
+For manual deployment, see [Cloudflare Workers documentation](https://developers.cloudflare.com/workers/wrangler/commands/#deploy).
+
+### GitHub Actions Deployment
+
+Example workflow for automated deployment:
+
+```yaml
+name: Deploy Email Forwarder
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install dependencies
+      run: |
+        cd email-forwarder
+        npm ci
+
+    - name: Create wrangler.toml
+      run: |
+        cat > email-forwarder/wrangler.toml <<EOF
+        name = "email-forwarder"
+        main = "src/index.ts"
+        compatibility_date = "2024-09-18"
+        workers_dev = false
+
+        [[kv_namespaces]]
+        binding = "DOMAIN_FILTER"
+        id = "${{ vars.KV_DOMAIN_FILTER_ID }}"
+
+        [[kv_namespaces]]
+        binding = "RETRY_QUEUE"
+        id = "${{ vars.KV_RETRY_QUEUE_ID }}"
+
+        [triggers]
+        crons = ["* * * * *"]
+
+        [observability]
+        enabled = true
+        head_sampling_rate = 1
+        EOF
+
+    - name: Deploy to Cloudflare Workers
+      uses: cloudflare/wrangler-action@v3
+      with:
+        apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        workingDirectory: email-forwarder
+        secrets: |
+          HTTP_WEBHOOK_API_TOKEN
+        vars: |
+          HTTP_WEBHOOK_URL
+      env:
+        HTTP_WEBHOOK_API_TOKEN: ${{ secrets.HTTP_WEBHOOK_API_TOKEN }}
+        HTTP_WEBHOOK_URL: ${{ vars.HTTP_WEBHOOK_URL }}
+```
+
+**GitHub Secrets:**
+- `CLOUDFLARE_API_TOKEN` - Cloudflare API token with Workers permissions
+- `HTTP_WEBHOOK_API_TOKEN` - Bearer token for webhook authentication
+
+**GitHub Variables:**
+- `CLOUDFLARE_ACCOUNT_ID` - Your Cloudflare account ID
+- `HTTP_WEBHOOK_URL` - Webhook endpoint URL
+- `KV_DOMAIN_FILTER_ID` - Domain filter KV namespace ID
+- `KV_RETRY_QUEUE_ID` - Retry queue KV namespace ID
 
 ## License
 
