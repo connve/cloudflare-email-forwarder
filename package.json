@@ -1,6 +1,6 @@
 {
   "name": "cloudflare-email-forwarder",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "description": "Cloudflare Worker for email forwarding",
   "main": "src/index.ts",
   "scripts": {

@@ -60,7 +60,11 @@ binding = "RETRY_QUEUE"
 id = "your-namespace-id"
 
 [triggers]
-crons = ["* * * * *"]
+# Configure based on your KV read limits:
+# Every minute (60 KV reads/hour): crons = ["* * * * *"]
+# Every 10 minutes (6 KV reads/hour): crons = ["*/10 * * * *"]
+# Every hour (1 KV read/hour): crons = ["0 * * * *"]
+crons = ["*/10 * * * *"]
 ```
 
 ### Domain Filtering (Optional)
@@ -119,7 +123,9 @@ wrangler kv:key put --binding=DOMAIN_FILTER "internal:yourcompany.com" "true"
 
 When webhook delivery fails, the email is saved to `RETRY_QUEUE` and retried with exponential backoff:
 
-**Schedule**: 1m → 2m → 4m → 8m → 16m → 32m → 1h → 2h → 4h → 8h
+**Backoff delays**: 1m → 2m → 4m → 8m → 16m → 32m → 1h → 2h → 4h → 8h
+
+These are minimum delays - actual retry happens at the next cron run. Configure cron interval based on your KV limits.
 
 After 10 attempts (~15 hours), requests move to dead letter queue (`failed:*` prefix).
 
