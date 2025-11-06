@@ -102,10 +102,15 @@ export default {
 
   /**
    * Scheduled handler that processes failed requests and retries them with exponential backoff.
-   * This should be configured as a Cron Trigger in wrangler.toml to run every minute.
-   * Example: crons = ["* * * * *"]
+   * Configure the Cron Trigger interval in your Cloudflare dashboard or wrangler.toml based on your KV read limits.
+   * Examples:
+   *   - Every minute: "* * * * *" (60 KV reads/hour)
+   *   - Every 10 minutes: "* /10 * * * *" (6 KV reads/hour, remove space after *)
+   *   - Every hour: "0 * * * *" (1 KV read/hour)
    *
-   * Note: This handler is only needed if RETRY_QUEUE is configured.
+   * Note: Exponential backoff delays (1min, 2min, 4min, etc.) are minimum delays.
+   * Actual retry happens at the next cron run after the delay expires.
+   * This handler is only needed if RETRY_QUEUE is configured.
    */
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     // Skip retry processing if RETRY_QUEUE is not configured
@@ -113,8 +118,6 @@ export default {
       console.log('RETRY_QUEUE not configured - skipping retry processor');
       return;
     }
-
-    console.log('Running retry processor...');
 
     // Validate required environment variables
     if (!env.HTTP_WEBHOOK_URL || !env.HTTP_WEBHOOK_API_TOKEN) {
