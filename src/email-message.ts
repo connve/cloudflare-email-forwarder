@@ -109,17 +109,92 @@ function decodeQuotedPrintable(content: string): string {
 }
 
 /**
+ * Decodes Base64 encoded content for proper UTF-8 character support.
+ * Handles both standard Base64 and removes line breaks before decoding.
+ */
+function decodeBase64(content: string): string {
+  // Remove line breaks and whitespace from Base64 content
+  const cleanedContent = content.replace(/[\r\n\s]/g, '');
+
+  try {
+    // Decode Base64 to binary string
+    const binaryString = atob(cleanedContent);
+
+    // Convert binary string to Uint8Array
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // Decode as UTF-8
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch (error) {
+    console.error('Failed to decode Base64 content:', error);
+    return content; // Return original content if decoding fails
+  }
+}
+
+/**
+ * Decodes content based on the specified encoding type.
+ */
+function decodeContent(content: string, encoding?: string): string {
+  if (!encoding) {
+    return content;
+  }
+
+  const normalizedEncoding = encoding.toLowerCase().trim();
+
+  if (normalizedEncoding === 'base64') {
+    return decodeBase64(content);
+  } else if (normalizedEncoding === 'quoted-printable') {
+    return decodeQuotedPrintable(content);
+  }
+
+  // For 7bit, 8bit, binary, or unknown encodings, return as-is
+  return content;
+}
+
+/**
  * Parses the raw email content to extract text and HTML body parts from multipart messages.
- * Uses regex to match Content-Type headers and extract the corresponding content sections.
- * Applies quoted-printable decoding for proper UTF-8 character support.
+ * Detects Content-Transfer-Encoding and applies appropriate decoding (base64, quoted-printable, etc.).
  */
 export function parseEmailBody(rawContent: string): EmailBody {
-  const textMatch = rawContent.match(/Content-Type: text\/plain[\s\S]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n$)/);
-  const htmlMatch = rawContent.match(/Content-Type: text\/html[\s\S]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n$)/);
+  // Match text/plain section with optional Content-Transfer-Encoding header
+  // Pattern: Content-Type: text/plain ... (optional headers) ... blank line ... content
+  const textMatch = rawContent.match(/Content-Type: text\/plain[^\r\n]*(?:\r?\n(?![\r\n])[^\r\n]+)*\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n$)/);
+  let textEncoding: string | undefined;
+  let textContent: string | undefined;
+
+  if (textMatch) {
+    // Look for Content-Transfer-Encoding in the section before the blank line
+    const sectionBeforeContent = rawContent.substring(
+      rawContent.indexOf('Content-Type: text/plain'),
+      rawContent.indexOf(textMatch[1])
+    );
+    const encodingMatch = sectionBeforeContent.match(/Content-Transfer-Encoding:\s*([^\r\n]+)/i);
+    textEncoding = encodingMatch?.[1]?.trim();
+    textContent = textMatch[1]?.trim();
+  }
+
+  // Match text/html section with optional Content-Transfer-Encoding header
+  const htmlMatch = rawContent.match(/Content-Type: text\/html[^\r\n]*(?:\r?\n(?![\r\n])[^\r\n]+)*\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n$)/);
+  let htmlEncoding: string | undefined;
+  let htmlContent: string | undefined;
+
+  if (htmlMatch) {
+    // Look for Content-Transfer-Encoding in the section before the blank line
+    const sectionBeforeContent = rawContent.substring(
+      rawContent.indexOf('Content-Type: text/html'),
+      rawContent.indexOf(htmlMatch[1])
+    );
+    const encodingMatch = sectionBeforeContent.match(/Content-Transfer-Encoding:\s*([^\r\n]+)/i);
+    htmlEncoding = encodingMatch?.[1]?.trim();
+    htmlContent = htmlMatch[1]?.trim();
+  }
 
   return {
-    text: textMatch?.[1] ? decodeQuotedPrintable(textMatch[1].trim()) : undefined,
-    html: htmlMatch?.[1] ? decodeQuotedPrintable(htmlMatch[1].trim()) : undefined
+    text: textContent ? decodeContent(textContent, textEncoding) : undefined,
+    html: htmlContent ? decodeContent(htmlContent, htmlEncoding) : undefined
   };
 }
 

@@ -172,6 +172,7 @@ Oto przyk=C5=82ad wiadomo=C5=9Bci z tre=C5=9B=C4=87 w j=C4=99zyku polskim.
 
 --mixed
 Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
 
 Regular text with =C5=82=C3=B3=C5=BC and normal characters.
 
@@ -197,6 +198,40 @@ This is a very long line that has been broken using quoted-printable=
     const result = parseEmailBody(rawContent);
 
     expect(result.text).toBe('This is a very long line that has been broken using quoted-printable soft line breaks for better formatting.');
+  });
+
+  it('should decode base64 encoded content', () => {
+    const rawContent = `Content-Type: multipart/alternative; boundary="base64test"
+
+--base64test
+Content-Type: text/plain; charset=UTF-8; format=flowed
+Content-Transfer-Encoding: base64
+
+RHppZcWEIGRvYnJ5LA0KDQrFu3nEhw0KDQotLSANCg0KUG96ZHJhd2lhbQ==
+
+--base64test--`;
+
+    const result = parseEmailBody(rawContent);
+
+    expect(result.text).toBe('Dzień dobry,\r\n\r\nŻyć\r\n\r\n-- \r\n\r\nPozdrawiam');
+  });
+
+  it('should handle base64 with line breaks in encoded content', () => {
+    const rawContent = `Content-Type: multipart/alternative; boundary="base64multiline"
+
+--base64multiline
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: base64
+
+VGhpcyBpcyBhIGxvbmdlciBtZXNzYWdlIHRoYXQgaXMgc3BsaXQgYWNyb3NzIG11bHRpcGxl
+IGxpbmVzIGluIGJhc2U2NCBlbmNvZGluZy4gSXQgc2hvdWxkIHN0aWxsIGJlIGRlY29kZWQg
+Y29ycmVjdGx5Lg==
+
+--base64multiline--`;
+
+    const result = parseEmailBody(rawContent);
+
+    expect(result.text).toBe('This is a longer message that is split across multiple lines in base64 encoding. It should still be decoded correctly.');
   });
 });
 
