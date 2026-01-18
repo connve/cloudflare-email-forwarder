@@ -6,8 +6,11 @@ import {
   updateHeaders,
   extractDomain,
   decodeRawEmail,
+  parseEmailAddress,
+  parseEmailAddresses,
   EmailBody,
-  StructuredEmail
+  StructuredEmail,
+  EmailAddress
 } from './email-message';
 
 // Mock Headers class for testing
@@ -239,9 +242,9 @@ describe('createStructuredEmail', () => {
   it('should create structured email with all fields', () => {
     const mockHeaders = new MockHeaders({
       'subject': 'Test Subject',
-      'to': 'recipient@example.com',
-      'cc': 'cc@example.com',
-      'bcc': 'bcc@example.com',
+      'to': 'John Doe <recipient@example.com>',
+      'cc': 'CC User <cc@example.com>',
+      'bcc': 'BCC User <bcc@example.com>',
       'date': 'Mon, 1 Jan 2024 12:00:00 +0000',
       'message-id': '<test@example.com>',
       'content-type': 'multipart/alternative',
@@ -249,7 +252,7 @@ describe('createStructuredEmail', () => {
     }) as unknown as Headers;
 
     const message = {
-      from: 'sender@example.com',
+      from: 'Sender Name <sender@example.com>',
       to: 'envelope@example.com',
       headers: mockHeaders
     };
@@ -265,10 +268,10 @@ describe('createStructuredEmail', () => {
 
     expect(result).toEqual({
       subject: 'Test Subject',
-      from: 'sender@example.com',
-      to: 'recipient@example.com', // Should use header, not envelope
-      cc: 'cc@example.com',
-      bcc: 'bcc@example.com',
+      from: { name: 'Sender Name', email: 'sender@example.com' },
+      to: [{ name: 'John Doe', email: 'recipient@example.com' }], // Should use header, not envelope
+      cc: [{ name: 'CC User', email: 'cc@example.com' }],
+      bcc: [{ name: 'BCC User', email: 'bcc@example.com' }],
       date: 'Mon, 1 Jan 2024 12:00:00 +0000',
       message_id: '<test@example.com>',
       headers: {
@@ -298,7 +301,7 @@ describe('createStructuredEmail', () => {
 
     const result = createStructuredEmail(message, body, 'raw');
 
-    expect(result.to).toBe('envelope@example.com');
+    expect(result.to).toEqual([{ name: '', email: 'envelope@example.com' }]);
   });
 
   it('should handle missing optional fields', () => {
@@ -315,8 +318,8 @@ describe('createStructuredEmail', () => {
     const result = createStructuredEmail(message, body, '');
 
     expect(result.subject).toBe('');
-    expect(result.cc).toBe('');
-    expect(result.bcc).toBe('');
+    expect(result.cc).toBeUndefined();
+    expect(result.bcc).toBeUndefined();
     expect(result.date).toBe('');
     expect(result.message_id).toBe('');
     expect(result.headers).toEqual({});
@@ -347,7 +350,7 @@ describe('createStructuredEmail', () => {
   it('should handle forwarded email scenario correctly', () => {
     const mockHeaders = new MockHeaders({
       'subject': 'Forwarded Test',
-      'to': 'original@example.com',
+      'to': 'Original User <original@example.com>',
       'x-forwarded-to': 'staging@example.com',
       'return-path': '<original.sender@gmail.com>'
     }) as unknown as Headers;
@@ -360,8 +363,8 @@ describe('createStructuredEmail', () => {
 
     const result = createStructuredEmail(message, {}, '');
 
-    expect(result.from).toBe('original.sender@gmail.com'); // From return-path
-    expect(result.to).toBe('original@example.com'); // From To header
+    expect(result.from).toEqual({ name: '', email: 'original.sender@gmail.com' }); // From return-path
+    expect(result.to).toEqual([{ name: 'Original User', email: 'original@example.com' }]); // From To header
   });
 });
 
@@ -471,6 +474,80 @@ describe('decodeRawEmail', () => {
     const bytes = new TextEncoder().encode(content);
     const result = decodeRawEmail(bytes.buffer);
     expect(result).toBe(content);
+  });
+});
+
+describe('parseEmailAddress', () => {
+  it('should parse email with name and address', () => {
+    expect(parseEmailAddress('John Doe <john@example.com>')).toEqual({
+      name: 'John Doe',
+      email: 'john@example.com'
+    });
+  });
+
+  it('should parse email with quoted name', () => {
+    expect(parseEmailAddress('"Jane Smith" <jane@example.com>')).toEqual({
+      name: 'Jane Smith',
+      email: 'jane@example.com'
+    });
+  });
+
+  it('should parse email without name', () => {
+    expect(parseEmailAddress('user@example.com')).toEqual({
+      name: '',
+      email: 'user@example.com'
+    });
+  });
+
+  it('should handle empty string', () => {
+    expect(parseEmailAddress('')).toEqual({
+      name: '',
+      email: ''
+    });
+  });
+
+  it('should handle email with whitespace', () => {
+    expect(parseEmailAddress('  John Doe  <john@example.com>  ')).toEqual({
+      name: 'John Doe',
+      email: 'john@example.com'
+    });
+  });
+});
+
+describe('parseEmailAddresses', () => {
+  it('should parse multiple email addresses', () => {
+    const result = parseEmailAddresses('John Doe <john@example.com>, Jane Smith <jane@example.com>');
+    expect(result).toEqual([
+      { name: 'John Doe', email: 'john@example.com' },
+      { name: 'Jane Smith', email: 'jane@example.com' }
+    ]);
+  });
+
+  it('should parse mixed format addresses', () => {
+    const result = parseEmailAddresses('user@example.com, John Doe <john@example.com>');
+    expect(result).toEqual([
+      { name: '', email: 'user@example.com' },
+      { name: 'John Doe', email: 'john@example.com' }
+    ]);
+  });
+
+  it('should handle empty string', () => {
+    expect(parseEmailAddresses('')).toEqual([]);
+  });
+
+  it('should handle single address', () => {
+    const result = parseEmailAddresses('john@example.com');
+    expect(result).toEqual([
+      { name: '', email: 'john@example.com' }
+    ]);
+  });
+
+  it('should handle addresses with commas in quoted names', () => {
+    const result = parseEmailAddresses('"Doe, John" <john@example.com>, jane@example.com');
+    expect(result).toEqual([
+      { name: 'Doe, John', email: 'john@example.com' },
+      { name: '', email: 'jane@example.com' }
+    ]);
   });
 });
 

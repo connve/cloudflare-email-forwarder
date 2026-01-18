@@ -85,8 +85,8 @@ describe('saveFailedRequest', () => {
     kv = new MockKVNamespace();
     mockEmail = {
       subject: 'Test Subject',
-      from: 'sender@example.com',
-      to: 'recipient@example.com',
+      from: { name: 'Sender Name', email: 'sender@example.com' },
+      to: [{ name: 'Recipient Name', email: 'recipient@example.com' }],
       date: '2024-01-01',
       message_id: '<test@example.com>',
       headers: {},
@@ -137,8 +137,8 @@ describe('updateFailedRequest', () => {
       id: 'test-123',
       email: {
         subject: 'Test',
-        from: 'sender@example.com',
-        to: 'recipient@example.com',
+        from: { name: 'Sender', email: 'sender@example.com' },
+        to: [{ name: 'Recipient', email: 'recipient@example.com' }],
         date: '2024-01-01',
         message_id: '<test@example.com>',
         headers: {},
@@ -287,8 +287,8 @@ describe('retryFailedRequest', () => {
       id: 'test-123',
       email: {
         subject: 'Test',
-        from: 'sender@example.com',
-        to: 'recipient@example.com',
+        from: { name: 'Sender', email: 'sender@example.com' },
+        to: [{ name: 'Recipient', email: 'recipient@example.com' }],
         date: '2024-01-01',
         message_id: '<test@example.com>',
         headers: {},
