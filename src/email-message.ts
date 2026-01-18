@@ -18,20 +18,71 @@ export interface EmailBody {
 }
 
 /**
+ * Represents a parsed email address with name and email components.
+ */
+export interface EmailAddress {
+  email: string;
+  name: string;
+}
+
+/**
  * Represents a structured email ready for webhook forwarding.
  * Uses snake_case for JSON field names.
  */
 export interface StructuredEmail {
   subject: string;
-  from: string;
-  to: string;
-  cc?: string;
-  bcc?: string;
+  from: EmailAddress;
+  to: EmailAddress[];
+  cc?: EmailAddress[];
+  bcc?: EmailAddress[];
   date: string;
   message_id: string;
   headers: Record<string, string>;
   body: EmailBody;
   raw_content: string;
+}
+
+/**
+ * Parses a single email address string into name and email components.
+ * Handles formats like "Name <user@example.com>" or just "user@example.com".
+ */
+export function parseEmailAddress(address: string): EmailAddress {
+  if (!address) {
+    return { email: '', name: '' };
+  }
+
+  // Match format: "Name <user@example.com>"
+  const match = address.trim().match(/^(.+?)\s*<(.+@.+)>$/);
+
+  if (match) {
+    return {
+      name: match[1].trim().replace(/^["']|["']$/g, ''), // Remove surrounding quotes if present
+      email: match[2].trim()
+    };
+  }
+
+  // If no angle brackets, assume it's just an email address
+  return {
+    name: '',
+    email: address.trim()
+  };
+}
+
+/**
+ * Parses a comma-separated list of email addresses into an array of EmailAddress objects.
+ * Handles multiple recipients in formats like "Name1 <user1@example.com>, Name2 <user2@example.com>".
+ */
+export function parseEmailAddresses(addresses: string): EmailAddress[] {
+  if (!addresses) {
+    return [];
+  }
+
+  // Split by comma, but be careful not to split commas inside quoted names
+  const parts = addresses.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+
+  return parts
+    .map(part => parseEmailAddress(part.trim()))
+    .filter(addr => addr.email); // Filter out empty emails
 }
 
 /**
@@ -222,12 +273,17 @@ export function createStructuredEmail(
   const headerEntries = Object.fromEntries(message.headers.entries());
   const cleanHeaders = updateHeaders(headerEntries, ['subject', 'from', 'to', 'cc', 'bcc', 'date', 'message-id']);
 
+  const fromString = getOriginalSender(message);
+  const toString = message.headers.get('to') || message.to;
+  const ccString = message.headers.get('cc') || '';
+  const bccString = message.headers.get('bcc') || '';
+
   return {
     subject: message.headers.get('subject') || '',
-    from: getOriginalSender(message),
-    to: message.headers.get('to') || message.to,
-    cc: message.headers.get('cc') || '',
-    bcc: message.headers.get('bcc') || '',
+    from: parseEmailAddress(fromString),
+    to: parseEmailAddresses(toString),
+    cc: ccString ? parseEmailAddresses(ccString) : undefined,
+    bcc: bccString ? parseEmailAddresses(bccString) : undefined,
     date: message.headers.get('date') || '',
     message_id: message.headers.get('message-id') || '',
     headers: cleanHeaders,
