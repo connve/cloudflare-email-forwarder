@@ -95,10 +95,28 @@ wrangler kv:key put --binding=DOMAIN_FILTER "internal:yourcompany.com" "true"
 ```json
 {
   "subject": "Email Subject",
-  "from": "sender@example.com",
-  "to": "recipient@example.com",
-  "cc": "cc@example.com",
-  "bcc": "bcc@example.com",
+  "from": {
+    "name": "Sender Name",
+    "email": "sender@example.com"
+  },
+  "to": [
+    {
+      "name": "Recipient Name",
+      "email": "recipient@example.com"
+    }
+  ],
+  "cc": [
+    {
+      "name": "CC Name",
+      "email": "cc@example.com"
+    }
+  ],
+  "bcc": [
+    {
+      "name": "BCC Name",
+      "email": "bcc@example.com"
+    }
+  ],
   "date": "Mon, 1 Jan 2024 12:00:00 +0000",
   "message_id": "<message-id>",
   "headers": {
@@ -112,6 +130,12 @@ wrangler kv:key put --binding=DOMAIN_FILTER "internal:yourcompany.com" "true"
   "raw_content": "Complete raw email content..."
 }
 ```
+
+### Email Address Format
+- Email addresses are parsed into structured objects with `name` and `email` fields
+- If no display name is present, the `name` field will be an empty string
+- `to`, `cc`, and `bcc` are arrays to support multiple recipients
+- `from` is a single object (only one sender allowed)
 
 ### Special Handling
 - Auto-forwarded emails: Extracts original sender from `Return-Path` header
