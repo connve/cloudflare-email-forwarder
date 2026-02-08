@@ -90,10 +90,14 @@ export function parseEmailAddresses(addresses: string): EmailAddress[] {
  * Handles formatted addresses like "Name <user@example.com>" and returns the domain part.
  */
 export function extractDomain(email: string): string {
+  if (!email) {
+    return '';
+  }
+
   // Extract email from formats like "Name <user@example.com>" or just "user@example.com"
   const emailMatch = email.match(/<(.+@.+)>/) || [null, email];
   const cleanEmail = emailMatch[1];
-  return cleanEmail.split('@')[1] || '';
+  return cleanEmail?.split('@')[1] || '';
 }
 
 /**

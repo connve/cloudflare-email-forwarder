@@ -169,6 +169,12 @@ export async function getRetryableRequests(
 
     const retryTimestamp = parseInt(parts[1], 10);
 
+    // Skip invalid timestamps
+    if (isNaN(retryTimestamp)) {
+      console.error(`Invalid timestamp in retry key: ${item.name}`);
+      continue;
+    }
+
     // Only fetch if ready to retry
     if (retryTimestamp <= now) {
       const value = await kv.get(item.name, 'text');
